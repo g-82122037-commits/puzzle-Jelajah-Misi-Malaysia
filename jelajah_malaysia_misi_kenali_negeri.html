@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jelajah Malaysia: Misi Kenali Negeri</title>
+  
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- MediaPipe Hands Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    body {
+      font-family: 'Nunito', sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
+      color: #f8fafc;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow-x: hidden;
+    }
+    
+    .font-heading {
+      font-family: 'Fredoka', cursive;
+    }
+
+    /* Glassmorphic Cards */
+    .glass-card {
+      background: rgba(30, 41, 59, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    /* SVG Map Styles */
+    .state-path {
+      fill: #334155;
+      stroke: #64748b;
+      stroke-width: 1.5;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .state-path:hover, .state-path.hovered {
+      fill: #475569;
+      stroke: #38bdf8;
+      stroke-width: 2.5;
+      filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+    }
+    .state-path.matched {
+      fill: #059669 !important;
+      stroke: #34d399 !important;
+      stroke-width: 2;
+    }
+
+    .drop-zone {
+      fill: rgba(241, 245, 249, 0.15);
+      stroke: #cbd5e1;
+      stroke-width: 1.5;
+      stroke-dasharray: 4, 4;
+      transition: all 0.3s ease;
+    }
+    .drop-zone.active-target {
+      fill: rgba(250, 204, 21, 0.3);
+      stroke: #facc15;
+      stroke-width: 2.5;
+      stroke-dasharray: 0;
+      animation: pulse 1.5s infinite;
+    }
+    .drop-zone.matched {
+      fill: rgba(16, 185, 129, 0.25);
+      stroke: #10b981;
+      stroke-dasharray: 0;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.03); opacity: 1; }
+    }
+
+    /* Draggable Chips */
+    .state-chip {
+      touch-action: none;
+      transition: transform 0.1s ease, box-shadow 0.2s ease, background-color 0.2s;
+    }
+    .state-chip:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+    }
+    .state-chip.selected {
+      border-color: #facc15;
+      box-shadow: 0 0 15px #facc15;
+      transform: scale(1.05);
+      background-color: #2563eb;
+    }
+    .state-chip.dragging {
+      opacity: 0.8;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* Virtual Hand Cursor */
+    #virtual-cursor {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: width 0.15s, height 0.15s, background-color 0.15s;
+    }
+    #virtual-cursor.pinched {
+      transform: translate(-50%, -50%) scale(0.75);
+      background-color: #ef4444 !important;
+      border-color: #fca5a5 !important;
+    }
+
+    /* Confetti Canvas */
+    #confetti-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 9990;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between relative overflow-x-hidden">
+
+  <!-- Confetti Canvas -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- Virtual Hand Pointer -->
+  <div id="virtual-cursor" class="hidden w-8 h-8 rounded-full border-2 border-yellow-300 bg-yellow-400/60 shadow-lg shadow-yellow-500/50 flex items-center justify-center">
+    <div class="w-2 h-2 rounded-full bg-white"></div>
+  </div>
+
+  <!-- HEADER NAVBAR -->
+  <header class="w-full px-6 py-4 glass-card border-b border-slate-700/50 flex justify-between items-center z-20">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-yellow-400 to-red-500 flex items-center justify-center text-slate-900 font-bold text-xl shadow-md">
+        🇲🇾
+      </div>
+      <div>
+        <h1 class="font-heading text-xl md:text-2xl font-bold bg-gradient-to-r from-yellow-300 via-red-400 to-blue-400 bg-clip-text text-transparent">
+          JELAJAH MALAYSIA
+        </h1>
+        <p class="text-xs text-slate-400 hidden sm:block">Misi Kenali Negeri & Wilayah Persekutuan</p>
+      </div>
+    </div>
+
+    <!-- Mode Selector & WebCam Status -->
+    <div class="flex items-center space-x-3">
+      <div id="webcam-status-pill" class="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300">
+        <span id="webcam-indicator" class="w-2.5 h-2.5 rounded-full bg-gray-500"></span>
+        <span id="webcam-status-text">Kamera Mati</span>
+      </div>
+
+      <button id="btn-toggle-input" onclick="toggleInputMode()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-yellow-400 flex items-center space-x-2 transition">
+        <i class="fa-solid fa-hand-pointer"></i>
+        <span id="input-mode-label">Mod: Tetikus</span>
+      </button>
+
+      <button onclick="showPage('page-records')" class="px-3 py-1.5 rounded-lg bg-blue-600/80 hover:bg-blue-600 text-white text-xs font-semibold transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-trophy"></i>
+        <span class="hidden md:inline">Rekod</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER WITH PAGES -->
+  <main class="flex-grow container mx-auto px-4 py-6 flex items-center justify-center relative z-10">
+    
+    <!-- 1. HALAMAN UTAMA & PENDAFTARAN (PAGE 1) -->
+    <section id="page-home" class="w-full max-w-xl glass-card rounded-3xl p-6 md:p-8 text-center space-y-6">
+      <div class="space-y-2">
+        <div class="inline-block px-4 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs font-semibold tracking-wide uppercase mb-2">
+          Permainan Puzzle Interaktif Sekolah Rendah
+        </div>
+        <h2 class="font-heading text-3xl md:text-4xl font-extrabold text-white">
+          Selamat Datang, Pengembara!
+        </h2>
+        <p class="text-slate-300 text-sm md:text-base">
+          Cabaran padankan 13 Negeri & 3 Wilayah Persekutuan di atas peta Malaysia menggunakan isyarat jari webcam atau tetikus!
+        </p>
+      </div>
+
+      <!-- Form Pendaftaran -->
+      <form id="form-register" onsubmit="startGame(event)" class="space-y-4 text-left pt-2">
+        <div>
+          <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">Nama Murid</label>
+          <div class="relative">
+            <i class="fa-solid fa-user absolute left-4 top-3.5 text-slate-400"></i>
+            <input type="text" id="player-name" required placeholder="Masukkan nama penuh anda" class="w-full pl-11 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition text-sm">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">Kelas</label>
+          <div class="relative">
+            <i class="fa-solid fa-school absolute left-4 top-3.5 text-slate-400"></i>
+            <input type="text" id="player-class" required placeholder="Cth: 4 Bestari / 5 Cemerlang" class="w-full pl-11 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 transition text-sm">
+          </div>
+        </div>
+
+        <!-- Mode Input Selection -->
+        <div class="p-3 bg-slate-900/50 rounded-xl border border-slate-700/60 flex items-center justify-between">
+          <span class="text-xs text-slate-300 font-semibold">Guna Kawalan WebCam (Jari)?</span>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="toggle-webcam-checkbox" class="sr-only peer">
+            <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
+          </label>
+        </div>
+
+        <button type="submit" class="w-full py-4 bg-gradient-to-r from-yellow-400 via-amber-500 to-red-500 hover:from-yellow-300 hover:to-red-400 text-slate-950 font-heading font-extrabold text-lg rounded-xl shadow-lg shadow-amber-500/25 transition transform active:scale-95 flex items-center justify-center space-x-2">
+          <span>MULA PERMAINAN</span>
+          <i class="fa-solid fa-circle-play text-xl"></i>
+        </button>
+      </form>
+
+      <div class="flex justify-around text-xs text-slate-400 border-t border-slate-800 pt-4">
+        <span><i class="fa-solid fa-heart text-red-500"></i> 3 Nyawa</span>
+        <span><i class="fa-solid fa-stopwatch text-yellow-400"></i> Berpacu Masa</span>
+        <span><i class="fa-solid fa-map-location-dot text-blue-400"></i> 16 Lokasi</span>
+      </div>
+    </section>
+
+    <!-- 2. HALAMAN GAMEPLAY PUZZLE (PAGE 2) -->
+    <section id="page-game" class="w-full max-w-6xl hidden flex-col space-y-4">
+      
+      <!-- Top Scoreboard Bar -->
+      <div class="w-full glass-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-lg bg-blue-600/30 border border-blue-400/40 flex items-center justify-center font-bold text-blue-300">
+            <i class="fa-solid fa-user-graduate text-lg"></i>
+          </div>
+          <div>
+            <div id="hud-name" class="font-bold text-white text-base">Pemain</div>
+            <div id="hud-class" class="text-xs text-slate-400">Kelas</div>
+          </div>
+        </div>
+
+        <!-- Nyawa -->
+        <div class="flex items-center space-x-2 bg-slate-900/60 px-4 py-2 rounded-xl border border-slate-700">
+          <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Nyawa:</span>
+          <div id="hud-lives" class="flex space-x-1 text-red-500 text-lg">
+            <i class="fa-solid fa-heart"></i>
+            <i class="fa-solid fa-heart"></i>
+            <i class="fa-solid fa-heart"></i>
+          </div>
+        </div>
+
+        <!-- Masa -->
+        <div class="flex items-center space-x-2 bg-slate-900/60 px-4 py-2 rounded-xl border border-slate-700">
+          <i class="fa-solid fa-clock text-amber-400"></i>
+          <span id="hud-timer" class="font-mono font-bold text-yellow-300 text-lg">00:00</span>
+        </div>
+
+        <!-- Mata & Kemajuan -->
+        <div class="flex items-center space-x-4">
+          <div class="text-right">
+            <div class="text-xs text-slate-400 font-bold uppercase">Skor</div>
+            <div id="hud-score" class="font-heading font-bold text-2xl text-emerald-400">0</div>
+          </div>
+          <div class="text-right border-l border-slate-700 pl-4">
+            <div class="text-xs text-slate-400 font-bold uppercase">Progres</div>
+            <div id="hud-progress" class="font-mono font-bold text-slate-200">0 / 16</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Interactive Puzzle Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
+        
+        <!-- Left Panel: List of Drag Chips -->
+        <div class="glass-card rounded-2xl p-4 lg:col-span-1 order-2 lg:order-1 flex flex-col space-y-3 max-h-[500px]">
+          <h3 class="font-heading text-sm font-bold text-yellow-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Senarai Negeri</span>
+            <i class="fa-solid fa-hand-holding-hand"></i>
+          </h3>
+          <p class="text-xs text-slate-400">Pilih & padankan nama ke lokasi peta yang betul.</p>
+          
+          <div id="chips-container" class="flex flex-wrap lg:flex-col gap-2 overflow-y-auto pr-1 max-h-[380px] custom-scrollbar">
+            <!-- Chips Generated via JS -->
+          </div>
+        </div>
+
+        <!-- Right Panel: SVG Map Canvas & WebCam Feed -->
+        <div class="glass-card rounded-2xl p-3 md:p-4 lg:col-span-3 order-1 lg:order-2 flex flex-col items-center justify-center relative min-h-[420px] overflow-hidden">
+          
+          <!-- WebCam Hidden Video Element & Overlay Canvas -->
+          <video id="webcam-video" class="hidden" playsinline></video>
+          <canvas id="webcam-canvas" class="hidden"></canvas>
+          
+          <!-- Instructions overlay for gesture -->
+          <div id="gesture-hint" class="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 flex items-center space-x-2">
+            <i class="fa-solid fa-hand-pointer text-yellow-400"></i>
+            <span id="hint-text">Guna Tetikus: Klik kad negeri, kemudian klik bulatan peta.</span>
+          </div>
+
+          <!-- MALAYSIA SVG MAP -->
+          <svg id="malaysia-svg" viewBox="0 0 1000 480" class="w-full h-auto max-h-[440px] drop-shadow-2xl">
+            <!-- Background Decorative Ocean Lines -->
+            <path d="M0,240 Q250,220 500,240 T1000,240" stroke="rgba(56, 189, 248, 0.05)" stroke-width="2" fill="none"/>
+            <text x="360" y="440" fill="rgba(255,255,255,0.08)" font-size="28" font-weight="bold" font-family="Fredoka">LAUT CHINA SELATAN</text>
+
+            <!-- Semenanjung Malaysia Vector Outlines -->
+            <g id="semenanjung-paths">
+              <!-- PERLIS -->
+              <path id="path-perlis" class="state-path" d="M120,70 L135,65 L140,80 L125,90 Z" data-state="Perlis" />
+              <!-- KEDAH -->
+              <path id="path-kedah" class="state-path" d="M125,90 L140,80 L165,85 L160,120 L130,125 L115,100 Z" data-state="Kedah" />
+              <!-- PULAU PINANG -->
+              <path id="path-penang" class="state-path" d="M110,120 L125,120 L120,135 L108,132 Z" data-state="Pulau Pinang" />
+              <!-- PERAK -->
+              <path id="path-perak" class="state-path" d="M130,125 L160,120 L185,150 L165,190 L140,185 L135,145 Z" data-state="Perak" />
+              <!-- KELANTAN -->
+              <path id="path-kelantan" class="state-path" d="M165,85 L215,100 L210,145 L185,150 L160,120 Z" data-state="Kelantan" />
+              <!-- TERENGGANU -->
+              <path id="path-terengganu" class="state-path" d="M215,100 L250,130 L235,175 L210,145 Z" data-state="Terengganu" />
+              <!-- SELANGOR -->
+              <path id="path-selangor" class="state-path" d="M140,185 L165,190 L175,230 L145,225 Z" data-state="Selangor" />
+              <!-- PAHANG -->
+              <path id="path-pahang" class="state-path" d="M185,150 L210,145 L235,175 L255,215 L190,235 L175,230 L165,190 Z" data-state="Pahang" />
+              <!-- KUALA LUMPUR & PUTRAJAYA inside Selangor area -->
+              <!-- NEGERI SEMBILAN -->
+              <path id="path-nsembilan" class="state-path" d="M175,230 L190,235 L185,260 L165,255 Z" data-state="Negeri Sembilan" />
+              <!-- MELAKA -->
+              <path id="path-melaka" class="state-path" d="M165,255 L185,260 L180,275 L165,270 Z" data-state="Melaka" />
+              <!-- JOHOR -->
+              <path id="path-johor" class="state-path" d="M185,260 L255,215 L265,265 L225,300 L180,275 Z" data-state="Johor" />
+            </g>
+
+            <!-- Sabah & Sarawak Vector Outlines -->
+            <g id="borneo-paths">
+              <!-- SARAWAK -->
+              <path id="path-sarawak" class="state-path" d="M520,310 L590,240 L670,220 L730,190 L750,230 L660,290 L570,350 Z" data-state="Sarawak" />
+              <!-- SABAH -->
+              <path id="path-sabah" class="state-path" d="M730,190 L780,130 L840,120 L880,165 L840,220 L750,230 Z" data-state="Sabah" />
+            </g>
+
+            <!-- DROP ZONES (CIRCLES FOR MATCHING 16 LOCATIONS) -->
+            <!-- Semenanjung Targets -->
+            <g id="drop-zones font-heading text-xs font-bold">
+              <!-- 1. Perlis -->
+              <circle id="target-perlis" class="drop-zone" cx="130" cy="75" r="14" data-target="Perlis"/>
+              <text x="130" y="79" font-size="10" fill="#fff" text-anchor="middle" pointer-events="none">PS</text>
+
+              <!-- 2. Kedah -->
+              <circle id="target-kedah" class="drop-zone" cx="145" cy="105" r="14" data-target="Kedah"/>
+              <text x="145" y="109" font-size="10" fill="#fff" text-anchor="middle" pointer-events="none">KDH</text>
+
+              <!-- 3. Pulau Pinang -->
+              <circle id="target-penang" class="drop-zone" cx="102" cy="128" r="13" data-target="Pulau Pinang"/>
+              <text x="102" y="132" font-size="9" fill="#fff" text-anchor="middle" pointer-events="none">PNG</text>
+
+              <!-- 4. Perak -->
+              <circle id="target-perak" class="drop-zone" cx="152" cy="155" r="15" data-target="Perak"/>
+              <text x="152" y="159" font-size="10" fill="#fff" text-anchor="middle" pointer-events="none">PRK</text>
+
+              <!-- 5. Kelantan -->
+              <circle id="target-kelantan" class="drop-zone" cx="190" cy="118" r="15" data-target="Kelantan"/>
+              <text x="190" y="122" font-size="10" fill="#fff" text-anchor="middle" pointer-events="none">KTN</text>
+
+              <!-- 6. Terengganu -->
+              <circle id="target-terengganu" class="drop-zone" cx="228" cy="140" r="15" data-target="Terengganu"/>
+              <text x="228" y="144" font-size="10" fill="#fff" text-anchor="middle" pointer-events="none">TRG</text>
+
+              <!-- 7. Pahang -->
+              <circle id="target-pahang" class="drop-zone" cx="210" cy="190" r="16" data-target="Pahang"/>
+              <text x="210" y="194" font-size="10" fill="#fff" text-anchor="middle" pointer-events="none">PHG</text>
+
+              <!-- 8. Selangor -->
+              <circle id="target-selangor" class="drop-zone" cx="150" cy="205" r="14" data-target="Selangor"/>
+              <text x="150" y="209" font-size="9" fill="#fff" text-anchor="middle" pointer-events="none">SGR</text>
+
+              <!-- 9. Kuala Lumpur -->
+              <circle id="target-kl" class="drop-zone" cx="166" cy="214" r="11" data-target="Kuala Lumpur"/>
+              <text x="166" y="217" font-size="8" fill="#facc15" font-weight="bold" text-anchor="middle" pointer-events="none">KL</text>
+
+              <!-- 10. Putrajaya -->
+              <circle id="target-putrajaya" class="drop-zone" cx="162" cy="230" r="11" data-target="Putrajaya"/>
+              <text x="162" y="233" font-size="8" fill="#facc15" font-weight="bold" text-anchor="middle" pointer-events="none">PJY</text>
+
+              <!-- 11. Negeri Sembilan -->
+              <circle id="target-nsembilan" class="drop-zone" cx="180" cy="245" r="14" data-target="Negeri Sembilan"/>
+              <text x="180" y="249" font-size="9" fill="#fff" text-anchor="middle" pointer-events="none">NS</text>
+
+              <!-- 12. Melaka -->
+              <circle id="target-melaka" class="drop-zone" cx="174" cy="268" r="12" data-target="Melaka"/>
+              <text x="174" y="271" font-size="8" fill="#fff" text-anchor="middle" pointer-events="none">MLK</text>
+
+              <!-- 13. Johor -->
+              <circle id="target-johor" class="drop-zone" cx="220" cy="265" r="16" data-target="Johor"/>
+              <text x="220" y="269" font-size="10" fill="#fff" text-anchor="middle" pointer-events="none">JHR</text>
+
+              <!-- Borneo Targets -->
+              <!-- 14. Sarawak -->
+              <circle id="target-sarawak" class="drop-zone" cx="620" cy="285" r="18" data-target="Sarawak"/>
+              <text x="620" y="289" font-size="11" fill="#fff" text-anchor="middle" pointer-events="none">SWK</text>
+
+              <!-- 15. Sabah -->
+              <circle id="target-sabah" class="drop-zone" cx="800" cy="175" r="18" data-target="Sabah"/>
+              <text x="800" y="179" font-size="11" fill="#fff" text-anchor="middle" pointer-events="none">SBH</text>
+
+              <!-- 16. Labuan -->
+              <circle id="target-labuan" class="drop-zone" cx="725" cy="165" r="11" data-target="Labuan"/>
+              <text x="725" y="168" font-size="8" fill="#facc15" font-weight="bold" text-anchor="middle" pointer-events="none">LBN</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. HALAMAN KEPUTUSAN PERMAINAN (PAGE 3) -->
+    <section id="page-result" class="w-full max-w-xl glass-card rounded-3xl p-6 md:p-8 text-center hidden space-y-6">
+      <div id="result-badge" class="w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-yellow-400 to-amber-500 flex items-center justify-center text-slate-950 text-4xl shadow-xl shadow-amber-500/30">
+        <i class="fa-solid fa-trophy"></i>
+      </div>
+
+      <div>
+        <h2 id="result-title" class="font-heading text-3xl font-extrabold text-white">Tahniah! Juara Jelajah!</h2>
+        <p id="result-subtitle" class="text-slate-300 text-sm mt-1">Anda telah berjaya menyelesaikan Misi Kenali Negeri.</p>
+      </div>
+
+      <!-- Ringkasan Statistik -->
+      <div class="grid grid-cols-2 gap-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-700 text-left">
+        <div>
+          <span class="text-xs text-slate-400 uppercase font-bold">Nama Pemain</span>
+          <div id="res-name" class="font-bold text-white text-base">Ahmad</div>
+        </div>
+        <div>
+          <span class="text-xs text-slate-400 uppercase font-bold">Kelas</span>
+          <div id="res-class" class="font-bold text-white text-base">4 Bestari</div>
+        </div>
+        <div>
+          <span class="text-xs text-slate-400 uppercase font-bold">Skor Akhir</span>
+          <div id="res-score" class="font-heading font-bold text-2xl text-emerald-400">160</div>
+        </div>
+        <div>
+          <span class="text-xs text-slate-400 uppercase font-bold">Masa Pembelajaran</span>
+          <div id="res-time" class="font-mono font-bold text-yellow-300 text-lg">02:45</div>
+        </div>
+        <div>
+          <span class="text-xs text-slate-400 uppercase font-bold">Baki Nyawa</span>
+          <div id="res-lives" class="text-red-500 text-sm font-bold">❤️ ❤️ ❤️</div>
+        </div>
+        <div>
+          <span class="text-xs text-slate-400 uppercase font-bold">Lokasi Tepat</span>
+          <div id="res-matched" class="font-bold text-blue-400 text-base">16 / 16</div>
+        </div>
+      </div>
+
+      <!-- Status Simpanan Data Apps Script -->
+      <div id="sync-status" class="text-xs py-2 px-3 rounded-lg bg-blue-900/40 border border-blue-700/50 text-blue-300 flex items-center justify-center space-x-2">
+        <i class="fa-solid fa-cloud-arrow-up animate-bounce"></i>
+        <span id="sync-status-text">Menyimpan rekod ke Google Sheets...</span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex flex-col sm:flex-row gap-3 pt-2">
+        <button onclick="restartGame()" class="flex-1 py-3 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-300 hover:to-amber-400 text-slate-950 font-bold rounded-xl transition shadow-lg">
+          <i class="fa-solid fa-rotate-right mr-1"></i> Main Semula
+        </button>
+        <button onclick="showPage('page-records')" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl border border-slate-700 transition">
+          <i class="fa-solid fa-list-ol mr-1"></i> Carta Skor
+        </button>
+        <button onclick="showPage('page-home')" class="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl border border-slate-700 transition">
+          <i class="fa-solid fa-house"></i>
+        </button>
+      </div>
+    </section>
+
+    <!-- 4. HALAMAN REKOD PENCAAPAIAN / LEADERBOARD (PAGE 4) -->
+    <section id="page-records" class="w-full max-w-4xl glass-card rounded-3xl p-6 hidden flex-col space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-700/60 pb-4">
+        <div>
+          <h2 class="font-heading text-2xl font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-trophy text-yellow-400"></i> Rekod Pencapaian Pemain
+          </h2>
+          <p class="text-xs text-slate-400">Senarai skor tertinggi murid disinkronkan dari Google Sheets.</p>
+        </div>
+        <button onclick="fetchLeaderboard()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 flex items-center space-x-1">
+          <i class="fa-solid fa-arrows-rotate"></i>
+          <span>Muat Semula</span>
+        </button>
+      </div>
+
+      <!-- Table Container -->
+      <div class="overflow-x-auto rounded-xl border border-slate-700/60 bg-slate-900/40">
+        <table class="w-full text-left text-sm text-slate-300">
+          <thead class="bg-slate-800/80 uppercase text-xs text-slate-400 border-b border-slate-700 font-bold">
+            <tr>
+              <th class="py-3 px-4">Kedudukan</th>
+              <th class="py-3 px-4">Nama</th>
+              <th class="py-3 px-4">Kelas</th>
+              <th class="py-3 px-4">Skor</th>
+              <th class="py-3 px-4">Masa</th>
+              <th class="py-3 px-4">Nyawa</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-table-body" class="divide-y divide-slate-800">
+            <!-- Dynamic Rows -->
+            <tr>
+              <td colspan="6" class="text-center py-6 text-slate-500">Memuatkan rekod...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="showPage('page-home')" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-bold border border-slate-700 transition">
+          Kembali ke Menu Utama
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="w-full py-3 text-center text-xs text-slate-500 border-t border-slate-800/60 glass-card z-20">
+    Aplikasi Permainan Interaktif Pendidikan Malaysia &copy; 2026 | Google Apps Script & MediaPipe Vision Powered
+  </footer>
+
+  <!-- SCRIPT LOGIK PERMAINAN (JAVASCRIPT) -->
+  <script>
+    /* ==========================================================================
+       1. GLOBAL STATE & CONFIGURATION
+       ========================================================================== */
+    // Google Apps Script Deployment URL (Gantikan dengan URL Web App anda jika ada)
+    const GAS_WEBAPP_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+
+    const STATE_DATA = [
+      { id: "Perlis", name: "Perlis", code: "PS", targetId: "target-perlis" },
+      { id: "Kedah", name: "Kedah", code: "KDH", targetId: "target-kedah" },
+      { id: "Pulau Pinang", name: "Pulau Pinang", code: "PNG", targetId: "target-penang" },
+      { id: "Perak", name: "Perak", code: "PRK", targetId: "target-perak" },
+      { id: "Kelantan", name: "Kelantan", code: "KTN", targetId: "target-kelantan" },
+      { id: "Terengganu", name: "Terengganu", code: "TRG", targetId: "target-terengganu" },
+      { id: "Pahang", name: "Pahang", code: "PHG", targetId: "target-pahang" },
+      { id: "Selangor", name: "Selangor", code: "SGR", targetId: "target-selangor" },
+      { id: "Kuala Lumpur", name: "Kuala Lumpur", code: "KL", targetId: "target-kl" },
+      { id: "Putrajaya", name: "Putrajaya", code: "PJY", targetId: "target-putrajaya" },
+      { id: "Negeri Sembilan", name: "Negeri Sembilan", code: "NS", targetId: "target-nsembilan" },
+      { id: "Melaka", name: "Melaka", code: "MLK", targetId: "target-melaka" },
+      { id: "Johor", name: "Johor", code: "JHR", targetId: "target-johor" },
+      { id: "Sarawak", name: "Sarawak", code: "SWK", targetId: "target-sarawak" },
+      { id: "Sabah", name: "Sabah", code: "SBH", targetId: "target-sabah" },
+      { id: "Labuan", name: "Labuan", code: "LBN", targetId: "target-labuan" }
+    ];
+
+    let playerInfo = { name: "", class: "" };
+    let gameState = {
+      score: 0,
+      lives: 3,
+      maxLives: 3,
+      matchedCount: 0,
+      totalCount: 16,
+      timerSeconds: 0,
+      timerInterval: null,
+      selectedState: null, // Bagi mouse click mode
+      isGameOver: false
+    };
+
+    let useWebcamMode = false;
+    let cameraInstance = null;
+    let handsInstance = null;
+    let isPinched = false;
+    let pinchedChip = null;
+
+    // Simulated Leaderboard Storage (In Memory Fallback)
+    let localLeaderboard = [
+      { name: "Aina", class: "5 Cemerlang", score: 160, time: "01:45", lives: 3 },
+      { name: "Danish", class: "4 Bestari", score: 140, time: "02:10", lives: 2 },
+      { name: "Mei Ling", class: "4 Pintar", score: 130, time: "02:30", lives: 2 }
+    ];
+
+    /* ==========================================================================
+       2. PAGE NAVIGATION & AUDIO SFX (Web Audio API)
+       ========================================================================== */
+    function showPage(pageId) {
+      ['page-home', 'page-game', 'page-result', 'page-records'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+      });
+      const active = document.getElementById(pageId);
+      if (active) active.classList.remove('hidden');
+
+      if (pageId === 'page-records') {
+        fetchLeaderboard();
+      }
+    }
+
+    // Web Audio Synthesizer for SFX
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    function playSound(type) {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'correct') {
+        osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+        osc.frequency.exponentialRampToValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+        osc.frequency.exponentialRampToValueAtTime(783.99, audioCtx.currentTime + 0.2); // G5
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } else if (type === 'wrong') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, audioCtx.currentTime); // A3
+        osc.frequency.exponentialRampToValueAtTime(110, audioCtx.currentTime + 0.2); // A2
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.25);
+      } else if (type === 'win') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.15);
+        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.3);
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.45);
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.6);
+      }
+    }
+
+    /* ==========================================================================
+       3. GAME INITIATION & CHIPS GENERATION
+       ========================================================================== */
+    function startGame(e) {
+      if (e) e.preventDefault();
+      
+      const nameInput = document.getElementById('player-name').value.trim();
+      const classInput = document.getElementById('player-class').value.trim();
+      useWebcamMode = document.getElementById('toggle-webcam-checkbox').checked;
+
+      if (!nameInput || !classInput) return;
+
+      playerInfo.name = nameInput;
+      playerInfo.class = classInput;
+
+      // Update HUD Player info
+      document.getElementById('hud-name').textContent = playerInfo.name;
+      document.getElementById('hud-class').textContent = playerInfo.class;
+
+      // Reset Game State
+      gameState.score = 0;
+      gameState.lives = 3;
+      gameState.matchedCount = 0;
+      gameState.timerSeconds = 0;
+      gameState.selectedState = null;
+      gameState.isGameOver = false;
+
+      updateHUD();
+      renderChips();
+      resetSvgTargets();
+      startTimer();
+
+      if (useWebcamMode) {
+        initWebcamTracking();
+        document.getElementById('input-mode-label').textContent = "Mod: WebCam (Jari)";
+        document.getElementById('hint-text').textContent = "Pinch (Ibu jari + Jari Telunjuk) untuk ambil & lepaskan nama negeri!";
+      } else {
+        stopWebcamTracking();
+        document.getElementById('input-mode-label').textContent = "Mod: Tetikus";
+        document.getElementById('hint-text').textContent = "Guna Tetikus: Klik kad negeri, kemudian klik bulatan peta.";
+      }
+
+      showPage('page-game');
+    }
+
+    function renderChips() {
+      const container = document.getElementById('chips-container');
+      container.innerHTML = "";
+
+      // Shuffle items randomly
+      const shuffled = [...STATE_DATA].sort(() => Math.random() - 0.5);
+
+      shuffled.forEach(item => {
+        const chip = document.createElement('div');
+        chip.id = `chip-${item.id.replace(/\s+/g, '-')}`;
+        chip.className = "state-chip px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl text-white text-xs md:text-sm font-semibold cursor-pointer flex items-center justify-between shadow-sm transition";
+        chip.dataset.state = item.id;
+        chip.innerHTML = `
+          <span>${item.name}</span>
+          <i class="fa-solid fa-location-dot text-xs text-yellow-400"></i>
+        `;
+
+        // Click Handler for Mouse Mode
+        chip.addEventListener('click', () => handleChipClick(chip, item.id));
+
+        container.appendChild(chip);
+      });
+    }
+
+    function resetSvgTargets() {
+      document.querySelectorAll('.drop-zone').forEach(zone => {
+        zone.classList.remove('matched', 'active-target');
+        zone.style.pointerEvents = "auto";
+      });
+      document.querySelectorAll('.state-path').forEach(path => {
+        path.classList.remove('matched');
+      });
+
+      // Attach Click Listeners to Targets
+      STATE_DATA.forEach(item => {
+        const targetEl = document.getElementById(item.targetId);
+        if (targetEl) {
+          targetEl.onclick = () => handleTargetClick(item.id);
+        }
+      });
+    }
+
+    /* ==========================================================================
+       4. GAMEPLAY LOGIC & MATCHING
+       ========================================================================== */
+    function handleChipClick(chipEl, stateId) {
+      if (gameState.isGameOver) return;
+
+      // Deselect all chips
+      document.querySelectorAll('.state-chip').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('active-target'));
+
+      if (gameState.selectedState === stateId) {
+        gameState.selectedState = null;
+      } else {
+        gameState.selectedState = stateId;
+        chipEl.classList.add('selected');
+
+        // Highlight matching target
+        const stateObj = STATE_DATA.find(s => s.id === stateId);
+        if (stateObj) {
+          const target = document.getElementById(stateObj.targetId);
+          if (target && !target.classList.contains('matched')) {
+            target.classList.add('active-target');
+          }
+        }
+      }
+    }
+
+    function handleTargetClick(targetStateId) {
+      if (!gameState.selectedState || gameState.isGameOver) return;
+
+      verifyMatch(gameState.selectedState, targetStateId);
+    }
+
+    function verifyMatch(selectedId, targetId) {
+      const selectedChip = document.getElementById(`chip-${selectedId.replace(/\s+/g, '-')}`);
+      const targetObj = STATE_DATA.find(s => s.id === targetId);
+      const targetCircle = document.getElementById(targetObj.targetId);
+      const pathId = `path-${targetObj.code.toLowerCase()}`;
+      const statePath = document.getElementById(pathId) || document.querySelector(`[data-state="${targetId}"]`);
+
+      if (selectedId === targetId) {
+        // MATCH CORRECT!
+        playSound('correct');
+        gameState.score += 10;
+        gameState.matchedCount += 1;
+
+        // Visual feedback
+        if (selectedChip) selectedChip.remove();
+        if (targetCircle) {
+          targetCircle.classList.remove('active-target');
+          targetCircle.classList.add('matched');
+          targetCircle.style.pointerEvents = "none";
+        }
+        if (statePath) statePath.classList.add('matched');
+
+        gameState.selectedState = null;
+        updateHUD();
+
+        // Check Win Condition
+        if (gameState.matchedCount === gameState.totalCount) {
+          endGame(true);
+        }
+      } else {
+        // MATCH WRONG!
+        playSound('wrong');
+        gameState.lives -= 1;
+        updateHUD();
+
+        // Flash target red
+        if (targetCircle) {
+          targetCircle.style.stroke = "#ef4444";
+          setTimeout(() => {
+            targetCircle.style.stroke = "";
+          }, 500);
+        }
+
+        if (gameState.lives <= 0) {
+          endGame(false);
+        }
+      }
+    }
+
+    function updateHUD() {
+      document.getElementById('hud-score').textContent = gameState.score;
+      document.getElementById('hud-progress').textContent = `${gameState.matchedCount} / ${gameState.totalCount}`;
+
+      // Update Lives Hearts
+      let heartsHtml = "";
+      for (let i = 0; i < gameState.maxLives; i++) {
+        if (i < gameState.lives) {
+          heartsHtml += `<i class="fa-solid fa-heart"></i> `;
+        } else {
+          heartsHtml += `<i class="fa-regular fa-heart text-slate-600"></i> `;
+        }
+      }
+      document.getElementById('hud-lives').innerHTML = heartsHtml;
+    }
+
+    function startTimer() {
+      clearInterval(gameState.timerInterval);
+      gameState.timerInterval = setInterval(() => {
+        gameState.timerSeconds++;
+        const mins = String(Math.floor(gameState.timerSeconds / 60)).padStart(2, '0');
+        const secs = String(gameState.timerSeconds % 60).padStart(2, '0');
+        document.getElementById('hud-timer').textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    function endGame(isWin) {
+      gameState.isGameOver = true;
+      clearInterval(gameState.timerInterval);
+      stopWebcamTracking();
+
+      const mins = String(Math.floor(gameState.timerSeconds / 60)).padStart(2, '0');
+      const secs = String(gameState.timerSeconds % 60).padStart(2, '0');
+      const timeFormatted = `${mins}:${secs}`;
+
+      // Populate Result Screen
+      document.getElementById('res-name').textContent = playerInfo.name;
+      document.getElementById('res-class').textContent = playerInfo.class;
+      document.getElementById('res-score').textContent = gameState.score;
+      document.getElementById('res-time').textContent = timeFormatted;
+      document.getElementById('res-matched').textContent = `${gameState.matchedCount} / ${gameState.totalCount}`;
+
+      let heartsHtml = "";
+      for (let i = 0; i < gameState.lives; i++) heartsHtml += "❤️ ";
+      document.getElementById('res-lives').textContent = heartsHtml || "Tiada";
+
+      if (isWin) {
+        playSound('win');
+        triggerConfetti();
+        document.getElementById('result-title').textContent = "Tahniah! Juara Jelajah!";
+        document.getElementById('result-subtitle').textContent = "Anda telah berjaya memadankan semua negeri dengan cemerlang!";
+        document.getElementById('result-badge').className = "w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-yellow-400 to-amber-500 flex items-center justify-center text-slate-950 text-4xl shadow-xl shadow-amber-500/30";
+      } else {
+        document.getElementById('result-title').textContent = "Cuba Lagi!";
+        document.getElementById('result-subtitle').textContent = "Nyawa anda telah habis. Teruskan berusaha kenali Malaysia!";
+        document.getElementById('result-badge').className = "w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-slate-600 to-slate-800 flex items-center justify-center text-slate-300 text-4xl shadow-xl";
+      }
+
+      showPage('page-result');
+      saveRecordToGoogleSheets(timeFormatted, isWin ? "TAMAT - MENANG" : "TAMAT - GAGAL");
+    }
+
+    function restartGame() {
+      startGame(null);
+    }
+
+    /* ==========================================================================
+       5. MEDIAPIPE WEBCAM HAND TRACKING
+       ========================================================================== */
+    function toggleInputMode() {
+      useWebcamMode = !useWebcamMode;
+      document.getElementById('toggle-webcam-checkbox').checked = useWebcamMode;
+      if (useWebcamMode) {
+        initWebcamTracking();
+        document.getElementById('input-mode-label').textContent = "Mod: WebCam (Jari)";
+        document.getElementById('hint-text').textContent = "Pinch (Ibu jari + Jari Telunjuk) untuk meletakkan nama negeri!";
+      } else {
+        stopWebcamTracking();
+        document.getElementById('input-mode-label').textContent = "Mod: Tetikus";
+        document.getElementById('hint-text').textContent = "Guna Tetikus: Klik kad negeri, kemudian klik bulatan peta.";
+      }
+    }
+
+    function initWebcamTracking() {
+      const videoElement = document.getElementById('webcam-video');
+      const cursor = document.getElementById('virtual-cursor');
+      cursor.classList.remove('hidden');
+
+      updateWebcamStatus(false, "Memulakan Kamera...");
+
+      handsInstance = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      handsInstance.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6
+      });
+
+      handsInstance.onResults(onHandResults);
+
+      cameraInstance = new Camera(videoElement, {
+        onFrame: async () => {
+          await handsInstance.send({ image: videoElement });
+        },
+        width: 640,
+        height: 480
+      });
+
+      cameraInstance.start()
+        .then(() => updateWebcamStatus(true, "Kamera Aktif"))
+        .catch(err => {
+          console.error("Webcam Access Error:", err);
+          updateWebcamStatus(false, "Kamera Gagal");
+          alert("Gagal mengakses webcam. Mod ditukar ke Tetikus.");
+          toggleInputMode();
+        });
+    }
+
+    function stopWebcamTracking() {
+      if (cameraInstance) {
+        cameraInstance.stop();
+        cameraInstance = null;
+      }
+      document.getElementById('virtual-cursor').classList.add('hidden');
+      updateWebcamStatus(false, "Kamera Mati");
+    }
+
+    function updateWebcamStatus(active, text) {
+      const pill = document.getElementById('webcam-status-pill');
+      const indicator = document.getElementById('webcam-indicator');
+      const statusText = document.getElementById('webcam-status-text');
+
+      pill.classList.remove('hidden');
+      statusText.textContent = text;
+      if (active) {
+        indicator.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping";
+      } else {
+        indicator.className = "w-2.5 h-2.5 rounded-full bg-gray-500";
+      }
+    }
+
+    function onHandResults(results) {
+      const cursor = document.getElementById('virtual-cursor');
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+
+        // Landmark 8: Index Finger Tip, Landmark 4: Thumb Tip
+        const indexTip = landmarks[8];
+        const thumbTip = landmarks[4];
+
+        // Convert normalized coordinates to screen pixel position (Mirrored horizontally)
+        const x = (1 - indexTip.x) * window.innerWidth;
+        const y = indexTip.y * window.innerHeight;
+
+        cursor.style.left = `${x}px`;
+        cursor.style.top = `${y}px`;
+
+        // Calculate pinch distance between index and thumb
+        const dx = (indexTip.x - thumbTip.x);
+        const dy = (indexTip.y - thumbTip.y);
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        const PINCH_THRESHOLD = 0.05; // Pinch sensitivity
+
+        if (distance < PINCH_THRESHOLD) {
+          if (!isPinched) {
+            isPinched = true;
+            cursor.classList.add('pinched');
+            handleVirtualPinchStart(x, y);
+          }
+        } else {
+          if (isPinched) {
+            isPinched = false;
+            cursor.classList.remove('pinched');
+            handleVirtualPinchEnd(x, y);
+          }
+        }
+      }
+    }
+
+    function handleVirtualPinchStart(x, y) {
+      // Find element at virtual cursor position
+      const targetEl = document.elementFromPoint(x, y);
+      if (!targetEl) return;
+
+      const chipEl = targetEl.closest('.state-chip');
+      if (chipEl) {
+        const stateId = chipEl.dataset.state;
+        handleChipClick(chipEl, stateId);
+      }
+    }
+
+    function handleVirtualPinchEnd(x, y) {
+      const targetEl = document.elementFromPoint(x, y);
+      if (!targetEl) return;
+
+      const dropZoneEl = targetEl.closest('.drop-zone');
+      if (dropZoneEl) {
+        const targetStateId = dropZoneEl.dataset.target;
+        handleTargetClick(targetStateId);
+      }
+    }
+
+    /* ==========================================================================
+       6. GOOGLE SHEETS & APPS SCRIPT INTEGRATION
+       ========================================================================== */
+    function saveRecordToGoogleSheets(timeFormatted, statusText) {
+      const statusEl = document.getElementById('sync-status-text');
+      statusEl.textContent = "Menyimpan rekod ke Google Sheets...";
+
+      const payload = {
+        action: "simpanRekod",
+        nama: playerInfo.name,
+        kelas: playerInfo.class,
+        skor: gameState.score,
+        tempohMasa: timeFormatted,
+        bakiNyawa: gameState.lives,
+        statusPermainan: statusText,
+        tarikh: new Date().toLocaleString('ms-MY')
+      };
+
+      // Add to local fallback list immediately
+      localLeaderboard.push({
+        name: playerInfo.name,
+        class: playerInfo.class,
+        score: gameState.score,
+        time: timeFormatted,
+        lives: gameState.lives
+      });
+
+      if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes("YOUR_GOOGLE_APPS_SCRIPT")) {
+        setTimeout(() => {
+          statusEl.textContent = "Rekod disimpan (Simulasi Tempatan)";
+        }, 1000);
+        return;
+      }
+
+      fetch(GAS_WEBAPP_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+      .then(() => {
+        statusEl.textContent = "Rekod berjaya disimpan ke Google Sheets!";
+      })
+      .catch(err => {
+        console.error("Save Record Error:", err);
+        statusEl.textContent = "Gagal menyimpan secara dalam talian (Disimpan secara tempatan).";
+      });
+    }
+
+    function fetchLeaderboard() {
+      const tbody = document.getElementById('leaderboard-table-body');
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-500">Memuatkan rekod...</td></tr>`;
+
+      if (!GAS_WEBAPP_URL || GAS_WEBAPP_URL.includes("YOUR_GOOGLE_APPS_SCRIPT")) {
+        renderLeaderboardRows(localLeaderboard);
+        return;
+      }
+
+      fetch(`${GAS_WEBAPP_URL}?action=dapatkanRekod`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.status === "success" && Array.isArray(data.records)) {
+            renderLeaderboardRows(data.records);
+          } else {
+            renderLeaderboardRows(localLeaderboard);
+          }
+        })
+        .catch(err => {
+          console.error("Fetch Leaderboard Error:", err);
+          renderLeaderboardRows(localLeaderboard);
+        });
+    }
+
+    function renderLeaderboardRows(records) {
+      const tbody = document.getElementById('leaderboard-table-body');
+      tbody.innerHTML = "";
+
+      // Sort by score descending
+      const sorted = [...records].sort((a, b) => (b.score || b.skor) - (a.score || a.skor));
+
+      if (sorted.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-500">Tiada rekod ditemui.</td></tr>`;
+        return;
+      }
+
+      sorted.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.className = "hover:bg-slate-800/40 transition";
+
+        let rankBadge = `<span class="font-bold text-slate-400">#${index + 1}</span>`;
+        if (index === 0) rankBadge = `<span class="text-yellow-400 font-bold text-base"><i class="fa-solid fa-crown mr-1"></i>1</span>`;
+        if (index === 1) rankBadge = `<span class="text-slate-300 font-bold"><i class="fa-solid fa-medal mr-1"></i>2</span>`;
+        if (index === 2) rankBadge = `<span class="text-amber-600 font-bold"><i class="fa-solid fa-award mr-1"></i>3</span>`;
+
+        row.innerHTML = `
+          <td class="py-3 px-4">${rankBadge}</td>
+          <td class="py-3 px-4 font-bold text-white">${item.name || item.nama}</td>
+          <td class="py-3 px-4 text-slate-400">${item.class || item.kelas}</td>
+          <td class="py-3 px-4 font-heading font-bold text-emerald-400">${item.score || item.skor}</td>
+          <td class="py-3 px-4 font-mono text-xs text-yellow-300">${item.time || item.tempohMasa}</td>
+          <td class="py-3 px-4 text-red-400">${"❤️".repeat(item.lives || item.bakiNyawa || 1)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    /* ==========================================================================
+       7. VISUAL EFFECTS (CONFETTI)
+       ========================================================================== */
+    function triggerConfetti() {
+      const canvas = document.getElementById('confetti-canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      const particles = [];
+      const colors = ['#facc15', '#ef4444', '#3b82f6', '#10b981', '#ec4899'];
+
+      for (let i = 0; i < 100; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height - canvas.height,
+          size: Math.random() * 8 + 4,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          speedY: Math.random() * 3 + 2,
+          speedX: Math.random() * 2 - 1,
+          rotation: Math.random() * 360
+        });
+      }
+
+      let animId;
+      function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        particles.forEach(p => {
+          p.y += p.speedY;
+          p.x += p.speedX;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        if (particles.some(p => p.y < canvas.height)) {
+          animId = requestAnimationFrame(animate);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          cancelAnimationFrame(animId);
+        }
+      }
+      animate();
+    }
+
+    // Window Resize Responsive Handler
+    window.addEventListener('resize', () => {
+      const canvas = document.getElementById('confetti-canvas');
+      if (canvas) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+    });
+  </script>
+</body>
+</html>
